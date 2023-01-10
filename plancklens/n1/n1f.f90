@@ -395,3 +395,185 @@ double precision function n1L_jtp(L, cl_kI, kA, kB, Xp, Yp, Ip, Jp, kI, cltt, cl
         end do
     end do
 end
+
+
+double precision function n1extraL(L, cl_kI, kA, kB, kI, cltt, clte, clee, clttfid, cltefid, cleefid, &
+                    ftlA, felA, fblA, ftlB, felB, fblB, lminA, lmaxA, lminB, lmaxB, lmaxI, &
+                    lmaxtt, lmaxte, lmaxee, lmaxttfid, lmaxtefid, lmaxeefid, dL, lps, nlps)
+    implicit None
+    integer, intent(in) :: L, lmaxA, lmaxB, lmaxI, lminA, lminB, dL
+    integer, intent(in) :: lmaxtt, lmaxte, lmaxee, lmaxttfid, lmaxtefid, lmaxeefid
+    integer, intent(in) :: nlps, lps(0:nlps-1)
+    ! lps is the anisotropy source multipole discretization.
+    ! Planck 2018 used lps=(/1,2,12,22,32,42,52,62,72,82,92,102,132,162,192,222,252,282,312,342,372, &
+    !    !                   402,432,462,492,522,552,652,752,852,952,1052,1152,1452,1752,2052,2352,2500/)
+    character(len=3), intent(in) :: kA, kB ! QE keys
+    character(len=1), intent(in) :: kI     ! anisotropy source key
+    double precision, intent(in) :: cltt(lmaxtt), clee(lmaxee), clte(lmaxte), cl_kI(lmaxI)
+    double precision, intent(in) :: clttfid(lmaxttfid), cleefid(lmaxeefid), cltefid(lmaxtefid)
+    double precision, intent(in) :: ftlA(lmaxA), felA(lmaxA), fblA(lmaxA)
+    double precision, intent(in) :: ftlB(lmaxB), felB(lmaxB), fblB(lmaxB)
+    double precision, external :: wf ! QE weight functions
+
+
+    double precision :: fal1(lmaxA), fal2(lmaxA), fal3(lmaxB), fal4(lmaxB)
+    double precision ::  L1, L2, L3, L4, L1x, L1y, L2x, L2y, Lx, Ly, M_PI, L3x, L3y, L4x, L4y, Lnew, Lnewx, Lnewy
+    integer :: L1i, L2i, L3i, L4i, i, Lnewi
+    double precision :: phi, dphi, dPh, PhiL_phi_dphi, fac, PhiLx, PhiLy, PhiL_phi, term1, term2
+    integer :: nphi, phiIx, PhiLix, PhiLi, PhiL_nphi, PhiL_nphi_ix
+    character(len=3) :: k13, k24, k14, k23
+    double precision :: dlps(0:nlps-1)
+
+    M_PI = 3.14159265358979323846d0
+    Ly = 0d0
+    Lx = float(L)
+
+    k13 = kI // kA(2:2) // kB(2:2)
+    k24 = kI // kA(3:3) // kB(3:3)
+    k14 = kI // kA(2:2) // kB(3:3)
+    k23 = kI // kA(3:3) // kB(2:2)
+
+    dlps(0) = float(lps(1) - lps(0))
+    do i = 1, nlps - 2
+        dlps(i) = 0.5d0 * (lps(i + 1) - lps(i - 1))
+    end do
+    dlps(nlps - 1) = float(lps(nlps - 1) - lps(nlps - 2))
+
+    if (kA(2:2) == 't') then
+        fal1 = ftlA
+    else if (kA(2:2) == 'e') then
+        fal1 = felA
+    else if (kA(2:2) == 'b') then
+        fal1 = fblA
+    else
+        write(*,*) 'Failed to find cmb filter '//kA
+    end if
+    if (kB(2:2) == 't') then
+        fal3 = ftlB
+    else if (kB(2:2) == 'e') then
+        fal3 = felB
+    else if (kB(2:2) == 'b') then
+        fal3 = fblB
+    else
+        write(*,*) 'Failed to find cmb filter '//kB
+    end if
+        if (kA(3:3) == 't') then
+        fal2 = ftlA
+    else if (kA(3:3) == 'e') then
+        fal2 = felA
+    else if (kA(3:3) == 'b') then
+        fal2 = fblA
+    else
+        write(*,*) 'Failed to find cmb filter '//kA
+    end if
+    if (kB(3:3) == 't') then
+        fal4= ftlB
+    else if (kB(3:3) == 'e') then
+        fal4 = felB
+    else if (kB(3:3) == 'b') then
+        fal4 = fblB
+    else
+        write(*,*) 'Failed to find cmb filter '//kB
+    end if
+
+    n1extraL = 0d0
+    do L1i =  max(lminA, dL / 2), lmaxA, dL !L1i iteration, why do I ask the max(lminA, dL / 2) ?
+        L1 = float(L1i)
+        nphi = 2 * L1i + 1 !number of phi points for a fixed L1i
+        if (L1i > 3 * dL) then
+            nphi = 2 * nint(0.5d0 * L1i  / float(dL)) + 1 !2*1/2*L1i/dL+1, why this?
+        end if
+        dphi = 2d0 * M_PI / nphi !delta phi for integral
+        do phiIx = 0, (nphi - 1)/ 2
+            phi = dphi * phiIx !deltaphi*phiindex
+            L1x = L1 * cos(phi)
+            L1y = L1 * sin(phi)
+            L2x = Lx - L1x
+            L2y = Ly - L1y
+            L2 = sqrt(L2x * L2x + L2y * L2y)
+
+            Lnewx = -Lx-L2x
+            Lnewy = -Ly-L2y
+            Lnew = sqrt(Lnewx * Lnewx + Lnewy * Lnewy)
+
+            if ( (L2 >= lminA) .AND. (L2 <= lmaxA) .AND. (Lnew >= lminA) .AND. (Lnew <= lmaxA) ) then
+                L2i = nint(L2)
+                Lnewi = nint(Lnew)
+                !integral over (Lphi,Lphi_angle) according to lps grid.
+                do PhiLix = 0, nlps - 1
+                    PhiLi = lps(PhiLix)
+                    dPh = dlps(PhiLix)
+                    PhiL_nphi = 2 * PhiLi + 1
+                    if (PhiLi > 20) then
+                        PhiL_nphi = 2 * nint(0.5d0 * PhiL_nphi/dPh) + 1
+                    end if
+                    PhiL_phi_dphi = 2.d0 * M_PI / PhiL_nphi
+                    fac  = (PhiL_phi_dphi * PhiLi * dPh) * (dphi * L1 * dL) / ( (2. * M_PI) ** 4. ) * 0.25d0
+                    if (phiIx /= 0) then
+                        fac = fac * 2d0
+                    end if
+                    fac = fac * wf(kA, L1x, L2x, L1y, L2y, L1i, L2i, clttfid, cltefid, cleefid, lmaxttfid, lmaxtefid, lmaxeefid)
+                    fac = fac * fal1(L1i) * fal2(L2i)
+                    do PhiL_nphi_ix = -(PhiL_nphi-1)/2, (PhiL_nphi-1)/2
+                        PhiL_phi = PhiL_phi_dphi * PhiL_nphi_ix
+                        PhiLx = PhiLi * cos(PhiL_phi)
+                        PhiLy = PhiLi * sin(PhiL_phi)
+                        L3x = PhiLx - Lnewx
+                        L3y = PhiLy - Lnewy
+                        L3 = sqrt(L3x*L3x + L3y*L3y)
+
+                        if ((L3 >= lminB) .AND. (L3 <= lmaxB)) then
+                            L3i = nint(L3)
+                            L4x = -PhiLx - L3x
+                            L4y = -PhiLy - L3y
+                            L4 = sqrt(L4x * L4x + L4y * L4y)
+                            if ((L4 >= lminB) .AND. (L4 <= lmaxB)) then
+                                 L4i = nint(L4)
+                                 ! wf(kA) and first two filters already absorded into 'fac'
+                                 term1 = wf(kB, Lnewx, L3x, Lnewy, L3y, Lnewi, L3i, clttfid, cltefid, cleefid, &
+                                                 lmaxttfid, lmaxtefid, lmaxeefid)&
+                                         * wf(k13, L2x, Lnewx, L2y, Lnewy, L2i, Lnewi, cltt, clte, clee, &
+                                                 lmaxtt, lmaxte, lmaxee)&
+                                         * wf(k24, L3x, L4x, L3y, L4y, L3i, L4i, cltt, clte, clee, &
+                                                 lmaxtt, lmaxte, lmaxee)&
+                                         * fal3(Lnewi) * fal4(L3i)
+                                 term2 = term1
+                                 n1extraL = n1extraL  + (term1 + term2) * fac * cl_kI(PhiLi)
+                            end if
+                        end if
+                    end do
+                end do
+            end if
+        end do
+    end do
+end
+
+
+subroutine n1extra(ret, Ls, nL, cl_kI, kA, kB, kI, cltt, clte, clee, clttfid, cltefid, cleefid, &
+                    ftlA, felA, fblA, ftlB, felB, fblB, lminA, lmaxA, lminB, lmaxB, lmaxI, &
+                    lmaxtt, lmaxte, lmaxee, lmaxttfid, lmaxtefid, lmaxeefid, dL, lps, nlps)
+    implicit None
+    integer, intent(in) :: Ls(nL), lmaxA, lmaxB, lmaxI, lminA, lminB, dL, nL
+    integer, intent(in) :: lmaxtt, lmaxte, lmaxee, lmaxttfid, lmaxtefid, lmaxeefid
+    integer, intent(in) :: nlps, lps(0:nlps-1)
+    double precision, intent(out) :: ret(nL)
+    character(len=3), intent(in) :: kA, kB ! QE keys
+    character(len=1), intent(in) :: kI     ! anisotropy source key
+    double precision, intent(in) :: cltt(lmaxtt), clee(lmaxee), clte(lmaxte), cl_kI(lmaxI)
+    double precision, intent(in) :: clttfid(lmaxttfid), cleefid(lmaxeefid), cltefid(lmaxtefid)
+    double precision, intent(in) :: ftlA(lmaxA), felA(lmaxA), fblA(lmaxA)
+    double precision, intent(in) :: ftlB(lmaxB), felB(lmaxB), fblB(lmaxB)
+    double precision, external :: n1extraL
+    integer iL
+
+    !$OMP PARALLEL
+    !$OMP DO SCHEDULE(DYNAMIC,1)
+    do iL = 1, nL
+        ret(iL) = n1extraL(Ls(iL), cl_kI, kA, kB, kI, cltt, clte, clee, clttfid, cltefid, cleefid, &
+                    ftlA, felA, fblA, ftlB, felB, fblB, lminA, lmaxA, lminB, lmaxB, lmaxI, &
+                    lmaxtt, lmaxte, lmaxee, lmaxttfid, lmaxtefid, lmaxeefid, dL, lps, nlps)
+    end do
+    !$OMP ENDDO
+    !$OMP END PARALLEL
+end
+

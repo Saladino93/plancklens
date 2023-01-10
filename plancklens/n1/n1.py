@@ -133,6 +133,9 @@ class library_n1:
         self.npdb = sql.npdb(os.path.join(lib_dir, 'npdb.db'))
         self.fldb = sql.fldb(os.path.join(lib_dir, 'fldb.db'))
 
+        self.npdbextra = sql.npdb(os.path.join(lib_dir, 'npdbextra.db'))
+        self.fldbextra = sql.fldb(os.path.join(lib_dir, 'fldbextra.db'))
+
         self.lib_dir = lib_dir
 
     def hashdict(self):
@@ -203,6 +206,8 @@ class library_n1:
             idx += '_Lmax%s' % Lmax
 
             ret = self.npdb.get(idx)
+            retextra = self.npdbextra.get(idx)
+
             if ret is not None:
                 if not recache and not remove_only:
                     return ret
@@ -215,13 +220,14 @@ class library_n1:
                 Ls = np.unique(np.concatenate([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], np.arange(1, Lmax + 1)[::20], [Lmax]]))
                 if sglLmode:
                     n1L = np.zeros(len(Ls), dtype=float)
+                    n1extraL = np.zeros(len(Ls), dtype=float)
                     for i, L in enumerate(Ls[mpi.rank::mpi.size]):
                         print("n1: doing L %s kA %s kB %s kind %s" % (L, kA, kB, k_ind))
-                        n1L[i] = (self._get_n1_L(L, kA, kB, k_ind, cl_kind, ftlA, felA, fblA, ftlB, felB, fblB, clttfid, cltefid, cleefid, remove_only=remove_only))
+                        n1L[i], n1extraL[i] = self._get_n1_L(L, kA, kB, k_ind, cl_kind, ftlA, felA, fblA, ftlB, felB, fblB, clttfid, cltefid, cleefid, remove_only=remove_only)
                     if mpi.size > 1:
                         mpi.barrier()
                         for i, L in enumerate(Ls): # reoading cached n1L's
-                            n1L[i] = (self._get_n1_L(L, kA, kB, k_ind, cl_kind, ftlA, felA, fblA, ftlB, felB, fblB, clttfid,
+                            n1L[i], n1extraL[i] = (self._get_n1_L(L, kA, kB, k_ind, cl_kind, ftlA, felA, fblA, ftlB, felB, fblB, clttfid,
                                              cltefid, cleefid, remove_only=remove_only))
 
                 else: # entire vector from f90 openmp call
@@ -230,13 +236,22 @@ class library_n1:
                     n1L = n1f.n1(Ls, cl_kind, kA, kB, k_ind, self.cltt, self.clte, self.clee,
                                  clttfid, cltefid, cleefid,  ftlA, felA, fblA, ftlB, felB, fblB,
                                   lmin_ftlA, lmin_ftlB,  self.dL, self.lps)
+                    n1extraL = n1f.n1extra(Ls, cl_kind, kA, kB, k_ind, self.cltt, self.clte, self.clee,
+                                 clttfid, cltefid, cleefid,  ftlA, felA, fblA, ftlB, felB, fblB,
+                                  lmin_ftlA, lmin_ftlB,  self.dL, self.lps)
 
                 ret = np.zeros(Lmax + 1)
                 ret[1:] =  spline(Ls, np.array(n1L) * n1_flat(Ls), s=0., ext='raise', k=3)(np.arange(1, Lmax + 1) * 1.)
                 ret[1:] *= cli(n1_flat(np.arange(1, Lmax + 1) * 1.))
                 self.npdb.add(idx, ret)
-                return ret
-            return self.npdb.get(idx)
+
+                retextra = np.zeros(Lmax + 1)
+                retextra[1:] =  spline(Ls, np.array(n1extraL) * n1_flat(Ls), s=0., ext='raise', k=3)(np.arange(1, Lmax + 1) * 1.)
+                retextra[1:] *= cli(n1_flat(np.arange(1, Lmax + 1) * 1.))
+                self.npdbextra.add(idx, retextra)
+
+                return ret, retextra
+            return self.npdb.get(idx), self.npdbextra.get(idx)
 
         if (kA in estimator_keys_derived) and (kB in estimator_keys_derived):
             ret = 0.
@@ -298,6 +313,8 @@ class library_n1:
 
                 n1_L = self.fldb.get(idx)
 
+                n1extra_L = self.fldbextra.get(idx)
+
                 if n1_L is None:
                     if remove_only:
                         return 0.
@@ -305,13 +322,19 @@ class library_n1:
                                   self.cltt, self.clte, self.clee, clttfid, cltefid, cleefid,
                                   ftlA, felA, fblA, ftlB, felB, fblB,
                                   lmin_ftlA, lmin_ftlB,  self.dL, self.lps)
+                    n1extra_L = n1f.n1extral(L, cl_kind, kA, kB, k_ind, 
+                                            self.cltt, self.clte, self.clee, clttfid, cltefid, cleefid,
+                                            ftlA, felA, fblA, ftlB, felB, fblB,
+                                            lmin_ftlA, lmin_ftlB,  self.dL, self.lps)
                     self.fldb.add(idx, n1_L)
-                    return n1_L
+                    self.fldbextra.add(idx, n1extra_L)
+                    return n1_L, n1extra_L
                 else:
                     if remove_only:
                         self.fldb.remove(idx)
+                        self.fldbextra.remove(idx)
                         return 0.
-                    return n1_L
+                    return n1_L, n1extra_L
         assert 0
 
     def get_n1_jtp(self, kA, k_ind, cl_kind, fAlmat, Lmax, kB=None, fBlmat=None,
