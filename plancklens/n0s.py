@@ -44,7 +44,7 @@ from plancklens import utils, qresp, nhl
 from copy import deepcopy
 
 
-def get_N0(beam_fwhm=1.4, nlev_t:float or np.ndarray=5., nlev_p=None, lmax_CMB: dict or int =3000,  lmin_CMB=100, lmax_out=None,
+def get_N0(cls_dat, beam_fwhm=1.4, nlev_t:float or np.ndarray=5., nlev_p=None, lmax_CMB: dict or int =3000,  lmin_CMB=100, lmax_out=None,
            cls_len:dict or None =None, cls_weight:dict or None=None,
            joint_TP=True, ksource='p'):
     r"""Example function to calculates reconstruction noise levels for a bunch of quadratic estimators
@@ -94,11 +94,11 @@ def get_N0(beam_fwhm=1.4, nlev_t:float or np.ndarray=5., nlev_p=None, lmax_CMB: 
     Noise_L_P = (nlev_p / 60. / 180. * np.pi) ** 2 / transf ** 2
 
     # Data power spectra
-    cls_dat = {
-        'tt': (cls_len['tt'][:lmax_ivf + 1] + Noise_L_T),
-        'ee': (cls_len['ee'][:lmax_ivf + 1] + Noise_L_P),
-        'bb': (cls_len['bb'][:lmax_ivf + 1] + Noise_L_P),
-        'te': np.copy(cls_len['te'][:lmax_ivf + 1])}
+    #cls_dat = {
+    #    'tt': (cls_len['tt'][:lmax_ivf + 1] + Noise_L_T),
+    #    'ee': (cls_len['ee'][:lmax_ivf + 1] + Noise_L_P),
+    #    'bb': (cls_len['bb'][:lmax_ivf + 1] + Noise_L_P),
+    #    'te': np.copy(cls_len['te'][:lmax_ivf + 1])}
 
     for s in cls_dat.keys():
         cls_dat[s][min(lmaxs_CMB[s[0]], lmaxs_CMB[s[1]]) + 1:] *= 0.
@@ -233,9 +233,15 @@ def get_N0_iter(qe_key:str, nlev_t:float or np.ndarray, nlev_p:float or np.ndarr
     delcls_fid = []
     delcls_true = []
 
+    fals = []
+
+    Response = []
+    Response_fid = []
+
     N0_unbiased = np.inf
     if cls_unl_dat is None:
         cls_unl_dat = cls_unl_fid
+
 
     for irr, it in utils.enumerate_progress(range(itermax + 1)):
         dls_unl_true, cldd_true = cls2dls(cls_unl_dat)
@@ -273,6 +279,8 @@ def get_N0_iter(qe_key:str, nlev_t:float or np.ndarray, nlev_p:float or np.ndarr
             dat_delcls[spec][min(lmaxs_ivf[spec[0]], lmaxs_ivf[spec[1]]) + 1:] *= 0
 
         fal = utils.cl_inverse(fal)
+
+
         for cl in fal.values():
             cl[:lmin_ivf] *= 0.
         for cl in dat_delcls.values():
@@ -286,6 +294,9 @@ def get_N0_iter(qe_key:str, nlev_t:float or np.ndarray, nlev_p:float or np.ndarr
         n_gg = nhl.get_nhl(qe_key, qe_key, cls_w, cls_ivfs, lmax_ivf, lmax_ivf, lmax_out=lmax_qlm)[0]
         r_gg_true = qresp.get_response(qe_key, lmax_ivf, 'p', cls_w, cls_f, fal, lmax_qlm=lmax_qlm)[0]
         r_gg_fid = qresp.get_response(qe_key, lmax_ivf, 'p', cls_w, cls_w, fal, lmax_qlm=lmax_qlm)[0] if cls_f is not cls_w else r_gg_true
+
+        Response.append(r_gg_true)
+
         N0_biased = n_gg * utils.cli(r_gg_fid ** 2) # N0 of possibly biased (by Rtrue / Rfid) QE estimator
         N0_unbiased = n_gg * utils.cli(r_gg_true ** 2) # N0 of QE estimator after rescaling by Rfid / Rtrue to make it unbiased
         N0s_biased.append(N0_biased)
@@ -295,6 +306,7 @@ def get_N0_iter(qe_key:str, nlev_t:float or np.ndarray, nlev_p:float or np.ndarr
 
         delcls_fid.append(cls_plen_fid)
         delcls_true.append(cls_plen_true)
+        fals += [fal]
 
 
-    return (np.array(N0s_biased), np.array(N0s_unbiased)) if not ret_delcls else ((np.array(N0s_biased), np.array(N0s_unbiased), delcls_fid, delcls_true))
+    return (np.array(N0s_biased), np.array(N0s_unbiased), np.array(Response)) if not ret_delcls else ((np.array(N0s_biased), np.array(N0s_unbiased), np.array(Response), delcls_fid, delcls_true, fals))
