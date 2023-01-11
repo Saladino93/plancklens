@@ -210,12 +210,14 @@ class library_n1:
 
             if ret is not None:
                 if not recache and not remove_only:
-                    return ret
+                    return ret, retextra
                 else:
                     self.npdb.remove(idx)
+                    self.npdbextra.remove(idx)
                     if remove_only:
-                        return np.zeros_like(ret)
+                        return np.zeros_like(ret), np.zeros_like(retextra)
                     ret = None
+                    retextra = None
             if ret is None:
                 Ls = np.unique(np.concatenate([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], np.arange(1, Lmax + 1)[::20], [Lmax]]))
                 if sglLmode:
