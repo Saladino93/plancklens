@@ -298,7 +298,7 @@ def apodize_mask(mask, sigma_arcmin=12., lmax=None, method='hybrid', cache_dir='
             hp.write_map(name, ap_mask)
     return ap_mask
 
-def camb_clfile(fname, lmax=None):
+def camb_clfile(fname, lmax=None, grad_mode:bool = False):
     """CAMB spectra (lenspotentialCls, lensedCls or tensCls types) returned as a dict of numpy arrays.
 
     Args:
@@ -314,8 +314,8 @@ def camb_clfile(fname, lmax=None):
     w = ell * (ell + 1) / (2. * np.pi)  # weights in output file
     idc = np.where(ell <= lmax) if lmax is not None else np.arange(len(ell), dtype=int)
     for i, k in enumerate(['tt', 'ee', 'bb', 'te']):
-        cls[k][ell[idc]] = cols[i + 1][idc] / w[idc]
-    if len(cols) > 5:
+        cls[k][ell[idc]] = cols[i + 1][idc] / (w[idc] if not grad_mode else 1.)
+    if (len(cols) > 5) and (not grad_mode):
         wpp = lambda ell : ell ** 2 * (ell + 1) ** 2 / (2. * np.pi)
         wptpe = lambda ell : np.sqrt(ell.astype(float) ** 3 * (ell + 1.) ** 3) / (2. * np.pi)
         for i, k in enumerate(['pp', 'pt', 'pe']):
