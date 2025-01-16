@@ -11,7 +11,7 @@ import pickle as pk
 import os
 
 from plancklens.helpers import mpi
-from plancklens import utils
+from plancklens import utils, shts
 
 class library_sepTP(object):
     """Template class for CMB inverse-variance and Wiener-filtering library.
@@ -81,7 +81,20 @@ class library_sepTP(object):
     def get_tal(self, a):
         assert 0, 'override this'
 
-    def get_sim_tlm(self, idx):
+
+    def fg_phases(self, mappa: np.ndarray, seed: int = 0):
+        np.random.seed(seed)
+        f = lambda z: np.exp(1j*np.random.uniform(0., 2.*np.pi, size = z.shape))
+        return f(mappa)
+    
+    def randomize(self, xlm, idx, shift = 100):
+        print("Randomizing maaap!!!", idx, shift)
+        return xlm*self.fg_phases(xlm, idx+shift)
+    
+    def process_map(self, xlm, idx, shift = 0):
+        return xlm if shift == 0 else self.randomize(xlm, idx, shift = shift)
+    
+    def get_sim_tlm(self, idx, shift = 0):
         """Returns an inverse-filtered temperature simulation.
 
             Args:
@@ -95,10 +108,10 @@ class library_sepTP(object):
         if not os.path.exists(tfname):
             tlm = self._apply_ivf_t(self.sim_lib.get_sim_tmap(idx), soltn=None if self.soltn_lib is None else self.soltn_lib.get_sim_tmliklm(idx))
             if self.cache: hp.write_alm(tfname, tlm, overwrite=True)
-            return tlm
-        return hp.read_alm(tfname)
+            return self.process_map(tlm, idx, shift = shift)
+        return self.process_map(hp.read_alm(tfname), idx, shift = shift)
 
-    def get_sim_elm(self, idx):
+    def get_sim_elm(self, idx, shift = 0):
         """Returns an inverse-filtered E-polarization simulation.
 
             Args:
@@ -118,11 +131,11 @@ class library_sepTP(object):
             if self.cache:
                 hp.write_alm(tfname, elm, overwrite=True)
                 hp.write_alm(os.path.join(self.lib_dir, 'sim_%04d_blm.fits'%idx if idx >= 0 else 'dat_blm.fits'), blm, overwrite=True)
-            return elm
+            return self.process_map(elm, idx, shift = shift)
         else:
-            return hp.read_alm(tfname)
+            return self.process_map(hp.read_alm(tfname), idx, shift = shift)
 
-    def get_sim_blm(self, idx):
+    def get_sim_blm(self, idx, shift = 0):
         """Returns an inverse-filtered B-polarization simulation.
 
             Args:
@@ -142,11 +155,11 @@ class library_sepTP(object):
             if self.cache:
                 hp.write_alm(tfname, blm, overwrite=True)
                 hp.write_alm(os.path.join(self.lib_dir, 'sim_%04d_elm.fits'%idx if idx >= 0 else 'dat_elm.fits'), elm, overwrite=True)
-            return blm
+            return self.process_map(blm, idx, shift = shift)
         else:
-            return hp.read_alm(tfname)
+            return self.process_map(hp.read_alm(tfname), idx, shift = shift)
 
-    def get_sim_tmliklm(self, idx):
+    def get_sim_tmliklm(self, idx, shift = 0):
         """Returns a Wiener-filtered temperature simulation.
 
             Args:
@@ -156,9 +169,9 @@ class library_sepTP(object):
                 Wiener-filtered temperature healpy alm array
 
         """
-        return hp.almxfl(self.get_sim_tlm(idx), self.cl['tt'])
+        return hp.almxfl(self.get_sim_tlm(idx, shift = shift), self.cl['tt'])
 
-    def get_sim_emliklm(self, idx):
+    def get_sim_emliklm(self, idx, shift = 0):
         """Returns a Wiener-filtered E-polarization simulation.
 
             Args:
@@ -168,9 +181,9 @@ class library_sepTP(object):
                 Wiener-filtered E-polarization healpy alm array
 
         """
-        return hp.almxfl(self.get_sim_elm(idx), self.cl['ee'])
+        return hp.almxfl(self.get_sim_elm(idx, shift = shift), self.cl['ee'])
 
-    def get_sim_bmliklm(self, idx):
+    def get_sim_bmliklm(self, idx, shift = 0):
         """Returns a Wiener-filtered B-polarization simulation.
 
             Args:
@@ -180,7 +193,7 @@ class library_sepTP(object):
                 Wiener-filtered B-polarization healpy alm array
 
         """
-        return hp.almxfl(self.get_sim_blm(idx), self.cl['bb'])
+        return hp.almxfl(self.get_sim_blm(idx, shift = shift), self.cl['bb'])
 
 
 
@@ -396,12 +409,12 @@ class library_fullsky_sepTP(library_sepTP):
 
     def _apply_ivf_t(self, tmap, soltn=None):
         assert len(tmap) == hp.nside2npix(self.nside), (hp.npix2nside(tmap.size), self.nside)
-        alm = hp.map2alm(tmap, lmax=self.lmax_fl, iter=0)
+        alm = shts.map2alm(tmap.copy(), lmax=self.lmax_fl)
         return hp.almxfl(alm, self.get_ftl() * utils.cli(self.transf['t'][:len(self.ftl)]))
 
     def _apply_ivf_p(self, pmap, soltn=None):
         assert len(pmap[0]) == hp.nside2npix(self.nside) and len(pmap[0]) == len(pmap[1])
-        elm, blm = hp.map2alm_spin([m for m in pmap], 2, lmax=self.lmax_fl)
+        elm, blm = shts.map2alm_spin([m.copy() for m in pmap], 2, lmax=self.lmax_fl)
         elm = hp.almxfl(elm, self.get_fel() * utils.cli(self.transf['e'][:len(self.fel)]))
         blm = hp.almxfl(blm, self.get_fbl() * utils.cli(self.transf['b'][:len(self.fbl)]))
         return elm, blm
@@ -524,12 +537,12 @@ class library_apo_sepTP(library_sepTP):
 
     def _apply_ivf_t(self, tmap, soltn=None):
         assert len(tmap) == hp.nside2npix(self.nside), (hp.npix2nside(tmap.size), self.nside)
-        alm = hp.map2alm(tmap * self.get_fmask(), lmax=self.lmax_fl, iter=0)
+        alm = shts.map2alm(tmap * self.get_fmask(), lmax=self.lmax_fl, iter=0)
         return hp.almxfl(alm, self.get_ftl() * utils.cli(self.transf[:len(self.ftl)]))
 
     def _apply_ivf_p(self, pmap, soltn=None):
         assert len(pmap[0]) == hp.nside2npix(self.nside) and len(pmap[0]) == len(pmap[1])
-        elm, blm = hp.map2alm_spin([m * self.get_fmask() for m in pmap], 2, lmax=self.lmax_fl)
+        elm, blm = shts.map2alm_spin([m * self.get_fmask() for m in pmap], 2, lmax=self.lmax_fl)
         elm = hp.almxfl(elm, self.get_fel() * utils.cli(self.transf[:len(self.fel)]))
         blm = hp.almxfl(blm, self.get_fbl() * utils.cli(self.transf[:len(self.fbl)]))
         return elm, blm

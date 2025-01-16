@@ -57,16 +57,19 @@ class multigrid_chain:
         logger = (lambda iter, eps, stage=self.bstage, **kwargs:
                   self.log(stage, iter, eps, **kwargs))
 
-        tpn_alm = self.opfilt.calc_prep(tpn_map, self.s_cls, self.n_inv_filt)
+        tpn_alm = self.opfilt.calc_prep(tpn_map, self.s_cls, self.n_inv_filt)  #B N^{-1} X^{dat}
         monitor = cd_monitors.monitor_basic(dot_op, logger=logger, iter_max=self.bstage.iter_max,
                                         eps_min=self.bstage.eps_min, d0=dot_op(tpn_alm, tpn_alm))
 
         fwd_op = self.opfilt.fwd_op(self.s_cls, self.n_inv_filt)
 
-        cd_solve.cd_solve(soltn, tpn_alm,
+        self.fwd_op = fwd_op
+
+        iter, soltn = cd_solve.cd_solve(soltn, tpn_alm,
                           fwd_op, self.bstage.pre_ops, dot_op, monitor,
                           tr=self.bstage.tr, cache=self.bstage.cache)
         finifunc(soltn, self.s_cls, self.n_inv_filt)
+        return soltn
 
     def log(self, stage, iter, eps, **kwargs):
         self.iter_tot += 1

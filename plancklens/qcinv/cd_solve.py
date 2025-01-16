@@ -104,4 +104,6 @@ def cd_solve(x, b, fwd_op, pre_ops, dot_op, criterion, tr, cache=cache_mem(), ro
         # clear old keys from cache
         cache.trim(range(tr(iter + 1), iter))
 
-    return iter
+        print("Iter residual", flush = True)
+
+    return iter, x

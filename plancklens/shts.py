@@ -9,15 +9,15 @@ try:
     print('Using lenspyx alm2map')
     nthreads = int(os.environ.get('OMP_NUM_THREADS', 0))
 
-    def alm2map(alm, nside):
+    def alm2map(alm, nside, nthreads = nthreads):
         geom = utils_geom.Geom.get_healpix_geometry(nside)
         lmax = utils_hp.Alm.getlmax(alm.size, None)
         return geom.alm2map(gclm=alm, lmax=lmax, mmax=lmax, nthreads=nthreads).squeeze()
-    def map2alm(m, lmax, **kwargs):
+    def map2alm(m, lmax, nthreads = nthreads, **kwargs):
         nside = int(np.round(np.sqrt(m.size // 12)))
         assert 12 *  nside ** 2 == m.size, (m.size, 12 * nside ** 2)
         geom = utils_geom.Geom.get_healpix_geometry(nside)
-        return geom.map2alm(m=m, lmax=lmax, mmax=lmax, nthreads=nthreads).squeeze()
+        return geom.map2alm(m=m, lmax=lmax, mmax=lmax, nthreads=nthreads, **kwargs).squeeze()
 
     def alm2map_spin(gclm, nside, spin, lmax):
         geom = utils_geom.Geom.get_healpix_geometry(nside)

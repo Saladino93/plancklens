@@ -75,6 +75,14 @@ class sims_cmb_unl:
     def get_sim_plm(self, idx):
         assert 'p' in self.fields, self.fields
         return self._get_sim_alm(idx, self.fields.index('p'))
+    
+    def get_sim_alpha_lm(self, idx):
+        assert 'a' in self.fields, self.fields
+        return self._get_sim_alm(idx, self.fields.index('a'))
+    
+    def get_sim_tau_lm(self, idx):
+        assert 'f' in self.fields, self.fields
+        return self._get_sim_alm(idx, self.fields.index('f'))
 
     def get_sim_olm(self, idx):
         assert 'o' in self.fields, self.fields
